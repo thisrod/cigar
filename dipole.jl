@@ -1,11 +1,11 @@
 # Anushka's dipole mode
 
 using LinearAlgebra, BandedMatrices, StaticArrays, DifferentialEquations
-using Plots, ComplexPhasePortrait, Printf
+using Plots, ComplexPhasePortrait
 
 N = 1e5		# number of atoms
 g = 0.06194	# repulsion constant
-b = 1.0		# trap to cloud offset
+b = 0.5		# trap to cloud offset
 
 hx = 0.5;  Nx = 35
 hy = 0.5;  Ny = 21
@@ -115,10 +115,25 @@ end
 
 # scatter(residual, mc=:black, ms=2, yscale=:log10, leg=:none)
 
-# # propagate
-# 
-# P = ODEProblem((ψ,p,t)->-1im*(-∂²*ψ-ψ*∂²+V.*ψ+C*abs2.(ψ).*ψ-1im*Ω*(y.*(ψ*∂')-x.*(∂*ψ))), ψ, (0.0,10.0))
-# @time S = solve(P; saveat=0.5)
-# 
-# zplot(ψ) = plot(y, y, portrait(reverse(ψ,dims=1)).*abs2.(ψ)/maximum(abs2.(ψ)), aspect_ratio=1)
-# zplot(ψ::Matrix{<:Real}) = zplot(Complex.(ψ))
+# propagate
+
+T = 10.0
+P = ODEProblem((ψ,_,_)->
+    -1im*(-(contract(∂²x,ψ,1)+contract(∂²y,ψ,2)+contract(∂²z,ψ,3))/2 + 
+        (V.-μ).*ψ + g*abs2.(ψ).*ψ),
+    Complex.(ψ), (0.0,T))
+S1 = solve(P)
+Q = ODEProblem((ψ,_,_)->
+    -1im*(-(contract(∂²x,ψ,1)+contract(∂²y,ψ,2)+contract(∂²z,ψ,3))/2 + 
+        (V.-μ).*ψ + g*abs2.(ψ).*ψ),
+    Complex.(TFψ), (0.0,T))
+S2 = solve(Q)
+
+tt = 0.0:0.1:T
+ev(A,φ) = [∫(A.*abs2.(φ(t))) / ∫(abs2.(φ(t)))  for t in tt]
+
+# plot(tt,ev(x,S), lc=:black, leg=:none)
+# plot!(tt,hypot.(ev(y,S),ev(z,S)), lc=:red, leg=:none)
+# plot(tt,ev(x.^2,S).-ev(x,S).^2, lc=:black, leg=:none)
+# plot(tt,ev(y.^2,S).-ev(y,S).^2, lc=:black, leg=:none)
+# plot(tt,ev(z.^2,S).-ev(z,S).^2, lc=:black, leg=:none)
