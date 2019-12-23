@@ -17,8 +17,19 @@ x = reshape(grid(hx,Nx),:,1,1)
 y = reshape(grid(hy,Ny),1,:,1)
 z = reshape(grid(hz,Nz),1,1,:)
 
-xyplane(u) = heatmap(y[:], x[:], u[:,:,(Nz+1)÷2], xlabel="y", ylabel="x")
-xzplane(u) = heatmap(z[:], x[:], u[:,(Ny+1)÷2,:], xlabel="z", ylabel="x")
+zplot(h,v,u) = plot(v, h,
+    portrait(reverse(u,dims=1)).*abs2.(u)/maximum(abs2.(u)),
+    ratio=:equal)
+zplot(h,v,u::Matrix{<:Real}) = zplot(h,v,Complex.(u))
+
+xyplane(u) = (
+    zplot(x[:], y[:], u[:,:,(Nz+1)÷2]);
+    xlabel!("y"); ylabel!("x");
+)
+xzplane(u) = (
+    zplot(x[:], z[:], u[:,(Ny+1)÷2,:]);
+    xlabel!("z"); ylabel!("x");
+)
 
 H = hx*hy*hz
 ∫(u) = H*sum(u)
