@@ -3,32 +3,40 @@
 using LinearAlgebra, BandedMatrices, StaticArrays, DifferentialEquations
 using Plots, ComplexPhasePortrait, Printf
 
-h = 0.5;  N = 7
+N = 1e5		# number of atoms
+g = 0.06194	# repulsion constant
+hxy = 0.5;  Nxy = 21
+hz = 5; Nz = 17
 a = 1.4		# SOR polation
 
-grid = h/2*(1-N:2:N-1) |> SVector{N}
+grid = hxy/2*(1-Nxy:2:Nxy-1) |> SVector{Nxy}
 x = reshape(grid,:,1,1)
 y = reshape(grid,1,:,1)
+grid = hz/2*(1-Nz:2:Nz-1) |> SVector{Nz}
 z = reshape(grid,1,1,:)
 
-V = r² = abs2.(x) .+ abs2.(y) .+ abs2.(z)
-ψ = Complex.(exp.(-r²/2)/√π)
+xyplane(u) = heatmap(y[:], x[:], u[:,:,(Nz+1)÷2], xlabel="y", ylabel="x")
+xzplane(u) = heatmap(z[:], x[:], u[:,(Nxy+1)÷2,:], xlabel="z", ylabel="x")
+∫(u) = hz*hxy^2*sum(u)
+
+V = (abs2.(x) .+ abs2.(y) .+ abs2.(z)/69.91)/2
 
 # TODO the right way to determine a broadcast shape
 xx = similar(x .+ y .+ z); xx .= x
 yy = similar(x .+ y .+ z); yy .= y
 zz = similar(x .+ y .+ z); zz .= z
 
-
 # Finite difference matrices.  ∂ on left is ∂y, ∂' on right is ∂x
 
-function op(stencil)
+function op(N, stencil)
     mid = (length(stencil)+1)÷2
     diags = [i-mid=>fill(stencil[i],N-abs(i-mid)) for i = keys(stencil)]
     BandedMatrix(Tuple(diags), (N,N))
 end
-∂ = (1/h).*op([-1/60, 3/20, -3/4, 0, 3/4, -3/20, 1/60])
-∂² = (1/h^2).*op([1/90, -3/20, 3/2, -49/18, 3/2, -3/20, 1/90])
+∂ = (1/hxy).*op(Nxy, [-1/60, 3/20, -3/4, 0, 3/4, -3/20, 1/60])
+∂² = (1/hxy^2).*op(Nxy, [1/90, -3/20, 3/2, -49/18, 3/2, -3/20, 1/90])
+∂z = (1/hz).*op(Nz, [-1/60, 3/20, -3/4, 0, 3/4, -3/20, 1/60])
+∂²z = (1/hz^2).*op(Nz, [1/90, -3/20, 3/2, -49/18, 3/2, -3/20, 1/90])
 
 function contract(A,x,dim)
     dims = [dim; setdiff(1:ndims(x), dim)]
@@ -40,13 +48,31 @@ end
 
 # test contraction
 
-for (j,u,uu) = [(1,x,xx), (2,y,yy), (3,z,zz)]
+for (j,u,uu) = [(1,x,xx), (2,y,yy)]
     @assert contract(∂,u,j)[:] ≈ ∂*u[:]
     @assert all(contract(∂,uu,j) .≈ contract(∂,u,j))
 end
+@assert contract(∂z,z,3)[:] ≈ ∂z*z[:]
+@assert all(contract(∂z,zz,3) .≈ contract(∂z,z,3))
 
-dψ = contract(∂,ψ,1)
-plane = real.(reshape(sum(dψ,dims=2), N, N))
+# Thomas-Fermi oprm to find healing length and grid size
+μ₀ = 0.0
+μ₁ = 20.0
+TFψ = similar(V)
+for _ = 1:1000
+    global μ₀, μ₁
+    μ = μ₀ + (μ₁-μ₀)/2
+    TFψ .= sqrt.(max.(0, μ .- V)/g)
+    NTF = ∫(abs2.(TFψ))
+    if abs(NTF-N) < 0.1
+        break
+    elseif NTF > N
+        μ₁ = μ
+    else
+        μ₀ = μ
+    end
+end
+μ = μ₀ + (μ₁-μ₀)/2
 
 # solve by SOR: 
 # -∂²*ψ-ψ*∂²+V.*ψ+C*abs2.(ψ).*ψ = μ*ψ
