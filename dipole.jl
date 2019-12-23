@@ -5,6 +5,7 @@ using Plots, ComplexPhasePortrait, Printf
 
 N = 1e5		# number of atoms
 g = 0.06194	# repulsion constant
+b = 1.0		# trap to cloud offset
 
 hx = 0.5;  Nx = 35
 hy = 0.5;  Ny = 21
@@ -22,7 +23,11 @@ xzplane(u) = heatmap(z[:], x[:], u[:,(Ny+1)÷2,:], xlabel="z", ylabel="x")
 H = hx*hy*hz
 ∫(u) = H*sum(u)
 
+# Trap for dynamics
 V = (abs2.(x) .+ abs2.(y) .+ abs2.(z)/69.91)/2
+
+# Notional trap for initial order parameter
+V₀ = (abs2.(x.-b) .+ abs2.(y) .+ abs2.(z)/69.91)/2
 
 # TODO the right way to determine a broadcast shape
 xx = similar(x .+ y .+ z); xx .= x
@@ -59,11 +64,11 @@ end
 # Thomas-Fermi oprm to find healing length and grid size
 μ₀ = 0.0
 μ₁ = 20.0
-TFψ = similar(V)
+TFψ = similar(V₀)
 for _ = 1:1000
     global μ₀, μ₁
     μ = μ₀ + (μ₁-μ₀)/2
-    TFψ .= sqrt.(max.(0, μ .- V)/g)
+    TFψ .= sqrt.(max.(0, μ .- V₀)/g)
     NTF = ∫(abs2.(TFψ))
     if abs(NTF-N) < 0.1
         break
@@ -76,7 +81,7 @@ end
 μ = μ₀ + (μ₁-μ₀)/2
 
 # solve by SOR: 
-# -∇²*ψ/2-ψ*∂²+V.*ψ+C*abs2.(ψ).*ψ = μ*ψ
+# -∇²*ψ/2-ψ*∂²+V₀.*ψ+C*abs2.(ψ).*ψ = μ*ψ
 
 ψ = copy(TFψ)
 ψ₀ = similar(ψ)
@@ -88,11 +93,11 @@ for _ = 1:100
         i,j,k = Tuple(R)
         ψ[R] = 0
         T = (∂²x[i,:]⋅ψ[:,j,k]+∂²y[j,:]⋅ψ[i,:,k]+∂²z[k,:]⋅ψ[i,j,:]) / 2
-        ψr = (μ*ψ₀[R]+T) / (diagel+V[R]+g*(abs2.(ψ₀[R])))
+        ψr = (μ*ψ₀[R]+T) / (diagel+V₀[R]+g*(abs2.(ψ₀[R])))
         ψ[R] = ψ₀[R] + a*(ψr-ψ₀[R])
      end
      Lψ = -(contract(∂²x,ψ,1)+contract(∂²y,ψ,2)+contract(∂²z,ψ,3))/2 +
-         V.*ψ + g*(abs2.(ψ)).*ψ
+         V₀.*ψ + g*(abs2.(ψ)).*ψ
      E = sum(conj.(ψ).*Lψ)/norm(ψ)^2 |> real
      push!(residual, norm(Lψ-E*ψ)/norm(ψ))
 end
